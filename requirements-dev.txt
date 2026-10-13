@@ -1,0 +1,5 @@
+# Unit tests (tests/unit) import the services directly.
+-r services/orders-api/requirements.txt
+-r services/saml-app/requirements.txt
+httpx==0.28.1
+pytest==8.3.4

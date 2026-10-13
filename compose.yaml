@@ -1,0 +1,91 @@
+# identity-federation-lab: one directory (LDAP), one IdP (Keycloak), every common way an app or an
+# API trusts it. Browser-facing URL of the IdP: http://localhost:8180. Containers talk to it as
+# http://keycloak:8080 (back channel); tokens always carry the public issuer.
+#
+#   docker compose up -d --build --wait
+#   docker compose --profile test run --rm e2e
+name: idlab
+
+services:
+  ldap:
+    build: ldap
+    environment:
+      LDAP_ORGANISATION: Company
+      LDAP_DOMAIN: company.local
+      LDAP_ADMIN_PASSWORD: admin-password
+      LDAP_TLS: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost -b dc=company,dc=local -D cn=admin,dc=company,dc=local -w admin-password uid=alice | grep -q 'numEntries: 1'"]
+      interval: 5s
+      retries: 30
+
+  keycloak:
+    build: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports: ["8180:8080"]
+    depends_on:
+      ldap: { condition: service_healthy }
+    healthcheck:
+      # No curl in the image: speak HTTP to the management port over bash's /dev/tcp.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      start_period: 30s
+      retries: 60
+
+  orders-api:
+    build: services/orders-api
+    ports: ["8380:8000"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+
+  web-app:
+    build: services/web-app
+    ports: ["8280:8000"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+
+  saml-app:
+    build: services/saml-app
+    ports: ["8580:8000"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+
+  kong-config:
+    build: services/kong-config
+    volumes: ["kong-config:/kong"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+
+  kong:
+    image: kong:3.9.0
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+    volumes: ["kong-config:/kong:ro"]
+    ports: ["8480:8000"]
+    depends_on:
+      kong-config: { condition: service_completed_successfully }
+      orders-api: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      retries: 30
+
+  e2e:
+    build: tests
+    profiles: [test]
+    network_mode: host   # reaches localhost:8180/8280/... exactly like a browser on this machine
+
+volumes:
+  kong-config:

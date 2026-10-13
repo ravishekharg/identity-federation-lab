@@ -1,0 +1,29 @@
+{
+  "realm": "partner",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "company-broker",
+      "name": "The company's Keycloak, brokering logins to this IdP",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "company-broker-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8180/realms/company/broker/partner/endpoint"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ],
+  "users": [
+    {
+      "username": "dave",
+      "enabled": true,
+      "email": "dave@partner.example",
+      "emailVerified": true,
+      "firstName": "Dave",
+      "lastName": "Partner",
+      "credentials": [{ "type": "password", "value": "dave-password", "temporary": false }]
+    }
+  ]
+}

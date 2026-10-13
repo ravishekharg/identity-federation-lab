@@ -1,0 +1,40 @@
+# Unit tests (token and SAML validation, offline), then the whole lab in Docker Compose with the
+# end-to-end checks: every login flow run for real, allowed and denied.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q tests/unit
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: start the lab
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: end-to-end checks
+        run: docker compose --profile test run --rm e2e
+      - name: logs on failure
+        if: failure()
+        run: docker compose logs --tail 200

@@ -1,0 +1,50 @@
+# The company directory. These people exist ONLY here: Keycloak federates them (reads users,
+# checks passwords with an LDAP bind, maps groups to roles). Nobody is created in Keycloak.
+# Plain-text passwords keep the lab readable; a real directory stores salted hashes.
+
+dn: ou=people,dc=company,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=company,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Admin
+givenName: Alice
+sn: Admin
+mail: alice@company.local
+userPassword: alice-password
+
+dn: uid=bob,ou=people,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Reader
+givenName: Bob
+sn: Reader
+mail: bob@company.local
+userPassword: bob-password
+
+dn: uid=carol,ou=people,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol NoAccess
+givenName: Carol
+sn: NoAccess
+mail: carol@company.local
+userPassword: carol-password
+
+# LDAP groups become Keycloak realm roles of the same name (role-ldap-mapper).
+dn: cn=orders-admin,ou=groups,dc=company,dc=local
+objectClass: groupOfNames
+cn: orders-admin
+member: uid=alice,ou=people,dc=company,dc=local
+
+dn: cn=orders-reader,ou=groups,dc=company,dc=local
+objectClass: groupOfNames
+cn: orders-reader
+member: uid=alice,ou=people,dc=company,dc=local
+member: uid=bob,ou=people,dc=company,dc=local

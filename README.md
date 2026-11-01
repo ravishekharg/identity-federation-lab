@@ -21,7 +21,7 @@ in production (Keycloak integrated with LDAP, OAuth2/OIDC and SAML). It isn't co
 employer.
 
 ## Result
-`docker compose --profile test run --rm e2e` (2026-10-13, local; CI runs it on every push): **29/29 checks pass**.
+`docker compose --profile test run --rm e2e` (CI on every push; latest 2026-11-01): **32/32 checks pass**.
 
 | Flow | Checked |
 |---|---|
@@ -32,9 +32,16 @@ employer.
 | Kong | no token / tampered / unknown issuer stopped at the gateway (401); a valid token forwarded; the API still enforces roles behind it |
 | Brokering | dave from the partner IdP signs in, gets `orders-reader` from the IdP mapper, can't create |
 | SAML | Keycloak POSTs a signed assertion; a modified assertion is rejected; the genuine one signs alice in with her LDAP roles; replaying it is rejected |
+| **Leaver** | alice's sessions are revoked in the IdP while her web session still holds an access token: her next **write is refused at once (401)**, because writes are checked with token introspection (RFC 7662); her next **read still succeeds**, because reads use local JWT checks, with the token valid for **299 s** more. That's the stateless-token gap, measured |
 
-Plus 22 offline unit tests (`tests/unit`) of the API's token checks (wrong key, audience, issuer,
-expiry, leeway, `alg=none`, HS256 confusion) and the SAML validator (forged, wrong signer, unsigned,
+**Revocation, the trade-off made explicit:** a JWT can't be "un-issued", so local validation accepts it until
+it expires. The API asks the IdP on writes, where the risk is, and accepts up to one token lifetime (5 minutes)
+of staleness on reads, so the IdP isn't a dependency of every request (`INTROSPECT=all` changes that). If the
+IdP can't answer, a write is refused, never allowed. Details:
+[`docs/architecture.md`](docs/architecture.md#3-revocation-the-gap-stateless-tokens-leave).
+
+Plus 24 offline unit tests (`tests/unit`) of the API's token checks (wrong key, audience, issuer,
+expiry, leeway, `alg=none`, HS256 confusion, introspection on writes, IdP unreachable) and the SAML validator (forged, wrong signer, unsigned,
 signature wrapping, wrong audience, expired, unsolicited, replayed, XXE).
 
 ## Run it

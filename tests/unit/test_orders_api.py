@@ -69,10 +69,28 @@ def test_clock_skew_within_leeway_is_accepted():
     assert get(make_token(exp=int(time.time()) - 10)).status_code == 200
 
 
-def test_reader_cannot_create_admin_can():
+def test_reader_cannot_create_admin_can(monkeypatch):
+    monkeypatch.setattr(api, "still_active", lambda token: True)
     assert client.post("/orders", json={"item": "x"}, headers={"Authorization": f"Bearer {make_token()}"}).status_code == 403
     admin = make_token(realm_access={"roles": ["orders-admin"]})
     assert client.post("/orders", json={"item": "x"}, headers={"Authorization": f"Bearer {admin}"}).status_code == 201
+
+
+def test_writes_need_an_active_token_reads_dont(monkeypatch):
+    asked = []
+    monkeypatch.setattr(api, "still_active", lambda token: asked.append(token) or False)   # the IdP says: revoked
+    admin = make_token(realm_access={"roles": ["orders-admin", "orders-reader"]})
+    r = client.post("/orders", json={"item": "x"}, headers={"Authorization": f"Bearer {admin}"})
+    assert r.status_code == 401 and "no longer active" in r.json()["detail"]
+    assert get(admin).status_code == 200                     # reads: local checks only, no IdP call
+    assert asked == [admin]
+
+
+def test_introspection_failure_refuses_the_write(monkeypatch):
+    def down(*_a, **_k):
+        raise api.requests.ConnectionError("idp down")
+    monkeypatch.setattr(api.requests, "post", down)
+    assert api.still_active("t") is False                    # "can't check" never means "allowed"
 
 
 def test_user_without_roles_is_403_not_401():

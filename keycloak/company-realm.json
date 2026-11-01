@@ -110,6 +110,17 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "orders-api",
+      "name": "Orders API (resource server: token introspection only, no logins)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "orders-api-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
     }
   ],
   "users": [

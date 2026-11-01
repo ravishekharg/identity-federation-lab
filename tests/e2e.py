@@ -11,6 +11,7 @@ import http.cookiejar
 import json
 import re
 import sys
+import time
 
 import requests
 from urllib.parse import urlsplit
@@ -21,6 +22,7 @@ API = "http://localhost:8380"
 KONG = "http://localhost:8480"
 SAML = "http://localhost:8580"
 RESULTS = []
+LEAVER: dict = {}
 
 
 def browser_like_cookies():
@@ -186,8 +188,29 @@ def main():
     code = requests.post(acs, data=fields, allow_redirects=False).status_code
     check("SAML: replaying the same response -> rejected", code == 403, code)
 
+    # 7. A leaver: alice's sessions are revoked in the IdP (what offboarding or "sign out everywhere" does) while
+    #    her browser session in the web app still holds an access token. Reads use local JWT checks only, so they
+    #    keep working until the token expires; writes are introspected, so they stop at once.
+    s, r = oidc_login("alice", "alice-password")
+    check("leaver drill: alice signed in and can create", s.post(f"{WEB}/api/orders", json={"item": "pre"}).status_code == 201)
+    admin = requests.post(f"{KC}/realms/master/protocol/openid-connect/token", data={
+        "grant_type": "password", "client_id": "admin-cli", "username": "admin", "password": "admin"}).json()["access_token"]
+    users = requests.get(f"{KC}/admin/realms/company/users", params={"username": "alice", "exact": "true"},
+                         headers=bearer(admin)).json()
+    exp = s.get(f"{WEB}/me").json().get("exp")
+    requests.post(f"{KC}/admin/realms/company/users/{users[0]['id']}/logout", headers=bearer(admin)).raise_for_status()
+    revoked_at = time.time()
+    read = s.get(f"{WEB}/api/orders").status_code
+    write = s.post(f"{WEB}/api/orders", json={"item": "after"}).status_code
+    gap = round(exp - revoked_at) if exp else None
+    check("leaver drill: write after revocation -> 401 at once (introspection)", write == 401, write)
+    check("leaver drill: read after revocation still 200 (local JWT, the documented gap)", read == 200,
+          f"{read}; token valid for {gap} s more")
+    LEAVER.update({"read_after_revocation": read, "write_after_revocation": write, "stale_read_window_s": gap})
+
     failed = [n for n, ok, _ in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} checks passed")
+    print("leaver drill: " + json.dumps(LEAVER))
     sys.exit(1 if failed else 0)
 
 
